@@ -33,7 +33,11 @@ mongoClient.connect(uri, (err, db) => {
             const newUser = {
                 name: req.body.name,
                 email: req.body.email,
-                password: req.body.password
+                password: req.body.password,
+                verify_code: "",
+                phone: "",
+                address: "",
+                sex: ""
             }
 
             const emailQuery = { email: newUser.email }
@@ -84,6 +88,7 @@ mongoClient.connect(uri, (err, db) => {
                                 email: result.email
                             }
                             res.status(200).send(JSON.stringify(objToSend))
+
                         } else {
                             res.status(401).send()
                         }
@@ -152,22 +157,61 @@ mongoClient.connect(uri, (err, db) => {
                     if (error) {
                         return res.status(504).send({ message: "Error sending email" })
                     }
-                    return res.status(200).send({ message: "Email sent successfully" })
+                    collection.updateOne({ email: email }, { $set: { verify_code: resetPasswordCode.toString() } }, (err, result) => {
+                        if (err) {
+                            return res.status(500).send({ message: "Error updating the reset password code in the database" })
+                        }
+                        return res.status(200).send({ message: "Email sent successfully" })
+                    })
                 })
 
             })
         })
 
-        const dbSensor = db.db('Datasensor');
+        app.post('/verifyresetpassword', (req, res) => {
 
-        app.get('/sensorhumi', (req, res) => {
+            const email = req.body.email
+            const resetPasswordCode = req.body.resetPasswordCode
 
-            const collection = dbSensor.collection('sensor/humi')
+            collection.findOne({ email: email }, (err, user) => {
+                if (err) {
+                    return res.send({ message: "Error finding user" })
+                }
+                if (!user) {
+                    return res.send({ message: "Email not found" })
+                }
+                //email ton tai tiep tuc xu ly
+                if (user.verify_code === resetPasswordCode) {
 
-            collection.findOne({}, (err, result) => {
-                if (err) throw err
-                res.send({ value: result.value })
-                db.close()
+                    return res.status(400).send({ message: "correct reset password code" })
+
+                } else {
+                    return res.status(404).send({ message: "Incorrect reset password code" })
+                }
+            })
+        })
+
+        app.post('/resetpassword', (req, res) => {
+
+            const email = req.body.email
+            const newPassword = req.body.newPassword
+
+            collection.findOne({ email: email }, (err, user) => {
+                if (err) {
+                    return res.send({ message: "Error finding user" })
+                }
+                if (!user) {
+                    return res.send({ message: "Email not found" })
+                }
+                bcrypt.hash(newPassword, saltRounds, function(err, hash) {
+                    user.password = hash;
+                    collection.updateOne({ email: email }, { $set: { password: hash } }, (err, result) => {
+                        if (err) {
+                            return res.status(500).send({ message: "Error resetting password" })
+                        }
+                        return res.status(200).send({ message: "Password reset successfully" })
+                    })
+                })
             })
         })
 
